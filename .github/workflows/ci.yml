@@ -1,0 +1,152 @@
+# Tests and lint run on pushes to main and on every pull request.
+# After tests pass on main, a Docker image is published to ghcr.io
+# deployed to staging, and then (after approval) to production on Render.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only by default; jobs that need more (e.g. pushing the image) ask for it.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Run the same job on several Node versions (a "matrix build").
+    strategy:
+      matrix:
+        node-version: [20, 22, 24]
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Run tests
+        run: npm test
+
+  lint:
+    # Style and bug checks only need to run once, not on every Node version.
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  scan:
+    # Build the image locally and check it for known vulnerabilities (CVEs) in
+    # the base image and installed packages, before anything is published.
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the image locally
+        run: docker build -t cicd-starter:scan .
+
+      # Pinned to a commit SHA: this action's tags were briefly hijacked in
+      # March 2026, and a tag can be moved to different code but a SHA cannot.
+      - name: Scan the image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          image-ref: cicd-starter:scan
+          # Fail only on serious issues that already have a fix available.
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  docker:
+    # Only start once tests, lint and the vulnerability scan have passed.
+    needs: [test, lint, scan]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # The pushed image pinned by digest, e.g. ghcr.io/owner/repo@sha256:...
+      image: ${{ steps.ref.outputs.image }}
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Pull requests only check that the image builds; nothing is published.
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      - name: Build and push the image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: GIT_SHA=${{ github.sha }}
+
+      - name: Record the image reference
+        id: ref
+        if: github.event_name == 'push'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  # Every push to main goes to staging first...
+  deploy-staging:
+    needs: docker
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      image: ${{ needs.docker.outputs.image }}
+      sha: ${{ github.sha }}
+    secrets: inherit
+
+  # ...then waits for approval (a required reviewer on the production
+  # environment) and ships the exact same image to production.
+  deploy-production:
+    needs: [docker, deploy-staging]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      image: ${{ needs.docker.outputs.image }}
+      sha: ${{ github.sha }}
+    secrets: inherit

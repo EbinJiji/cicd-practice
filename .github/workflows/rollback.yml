@@ -1,0 +1,70 @@
+# Redeploy an earlier release to Render, without rebuilding anything.
+# Run it from the Actions tab: Rollback → Run workflow → enter a commit SHA.
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to roll back to (short or full)"
+        required: true
+
+# Read-only by default; jobs that need more (e.g. pushing the image) ask for it.
+permissions:
+  contents: read
+
+jobs:
+  # Work out which image to redeploy.
+  find-release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      image: ${{ steps.image.outputs.ref }}
+
+    steps:
+      # Turn a short SHA into the full one that /health reports.
+      - name: Resolve the commit
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          full=$(gh api "repos/$GITHUB_REPOSITORY/commits/$INPUT_SHA" -q .sha)
+          echo "Rolling back to $full"
+          echo "sha=$full" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # CI tags every image it publishes as sha-<first 7 chars of the commit>.
+      - name: Find the image built from that commit
+        id: image
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tag="$repo:sha-${SHA:0:7}"
+          if ! digest=$(docker buildx imagetools inspect "$tag" --format '{{.Manifest.Digest}}'); then
+            echo "::error::No image found for $tag. Was this commit ever built on main?"
+            exit 1
+          fi
+          echo "Found $tag at $digest"
+          echo "ref=$repo@$digest" >> "$GITHUB_OUTPUT"
+
+  # Same deploy as CI, so it also waits for production approval and never
+  # overlaps a normal deploy.
+  deploy:
+    needs: find-release
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      image: ${{ needs.find-release.outputs.image }}
+      sha: ${{ needs.find-release.outputs.sha }}
+    secrets: inherit

@@ -1,0 +1,75 @@
+# Checks production between releases: runs the smoke tests on a schedule and
+# keeps one GitHub issue open while they fail (GitHub emails you when it opens).
+# The issue is closed automatically once the checks pass again.
+name: Monitor
+
+on:
+  schedule:
+    # Every 6 hours, at 17 past to avoid the busy top of the hour.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL to check instead of production (for testing the alert)"
+        required: false
+
+# Not the production environment: that would wait for approval on every run.
+env:
+  URL: ${{ inputs.url || 'https://cicd-starter-latest.onrender.com' }}
+  LABEL: production-down
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out the smoke tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Make sure the alert label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create "$LABEL" --color B60205 --description "Scheduled production check is failing" --force
+
+      # Free Render instances sleep when idle and can take a minute to wake up.
+      - name: Wake the service
+        run: |
+          for i in $(seq 1 12); do
+            curl -fsS --max-time 20 "$URL/health" && exit 0
+            echo " (attempt $i: not up yet)"
+            sleep 10
+          done
+          echo "Service did not respond after 12 attempts; the smoke tests will show the failure"
+
+      - name: Run smoke tests
+        id: smoke
+        continue-on-error: true
+        run: node scripts/smoke.js "$URL" 2>&1 | tee smoke.log; exit "${PIPESTATUS[0]}"
+
+      - name: Open or update the alert issue
+        if: steps.smoke.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body=$(printf 'Smoke tests failed against %s.\n\n```\n%s\n```\n\n[Run log](%s)' "$URL" "$(cat smoke.log)" "$RUN_URL")
+          issue=$(gh issue list --label "$LABEL" --state open --json number -q '.[0].number')
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "Still failing. $body"
+          else
+            gh issue create --title "Production check failing" --label "$LABEL" --body "$body"
+          fi
+          exit 1
+
+      - name: Close the alert issue
+        if: steps.smoke.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for issue in $(gh issue list --label "$LABEL" --state open --json number -q '.[].number'); do
+            gh issue close "$issue" --comment "Smoke tests pass again against $URL. [Run log]($RUN_URL)"
+          done

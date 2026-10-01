@@ -1,0 +1,16 @@
+{
+  "name": "cicd-starter",
+  "version": "1.0.0",
+  "description": "A tiny project for learning CI/CD with GitHub Actions",
+  "main": "src/calculator.js",
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
+  }
+}

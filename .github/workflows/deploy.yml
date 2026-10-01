@@ -1,0 +1,71 @@
+# Reusable deploy: sends one image to one environment's Render service and waits
+# until /health reports the expected commit, then runs smoke tests against it.
+# Called by CI (staging, then production) and by Rollback. Each GitHub
+# environment has its own RENDER_DEPLOY_HOOK secret and RENDER_URL variable.
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub environment to deploy to (staging or production)"
+        type: string
+        required: true
+      image:
+        description: "Image to deploy, pinned by digest (ghcr.io/...@sha256:...)"
+        type: string
+        required: true
+      sha:
+        description: "Full commit SHA that /health should report once live"
+        type: string
+        required: true
+
+# Read-only by default; jobs that need more (e.g. pushing the image) ask for it.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    # One deploy or rollback per environment at a time.
+    concurrency: deploy-${{ inputs.environment }}
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.RENDER_URL }}
+
+    steps:
+      - name: Trigger deploy on Render
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          echo "Deploying $IMAGE to ${{ inputs.environment }}"
+          curl -fsS -X POST "$DEPLOY_HOOK&imgURL=$(jq -rn --arg v "$IMAGE" '$v|@uri')"
+
+      # Render deploys in the background, so poll until the expected commit is live.
+      - name: Wait for the version to go live
+        env:
+          URL: ${{ vars.RENDER_URL }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          for i in $(seq 1 40); do
+            version=$(curl -fsS "$URL/health" | jq -r .version) || version=""
+            echo "Attempt $i: live version is ${version:-unreachable}"
+            if [ "$version" = "$SHA" ]; then
+              echo "Live on ${{ inputs.environment }}"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "$SHA did not go live within 10 minutes"
+          exit 1
+
+      # /health only proves the right version is running; these prove it works.
+      # On staging, a failure here stops the release before production approval.
+      - name: Check out the smoke tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run smoke tests
+        env:
+          URL: ${{ vars.RENDER_URL }}
+        run: node scripts/smoke.js "$URL"

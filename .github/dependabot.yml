@@ -1,0 +1,21 @@
+# Dependabot opens a PR when a newer version is available. Each PR runs the
+# full CI like any other, so nothing is merged unless tests and lint pass.
+version: 2
+updates:
+  # npm devDependencies (ESLint and friends), grouped into one weekly PR.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+
+  # Versions of the actions used in .github/workflows (checkout, setup-node, docker/*).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

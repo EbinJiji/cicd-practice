@@ -1,0 +1,36 @@
+# Render Blueprint: the two Render services this repo deploys to, as code.
+# https://render.com/docs/blueprint-spec
+#
+# The names must match the existing services exactly (including the colon) so
+# Render updates them instead of creating new ones. Region can't be changed
+# after creation. In the dashboard, production sits in the "My project" project
+# and staging is ungrouped.
+#
+# Not linked to Render yet: a first attempt at creating the Blueprint offered to
+# create new services (the names here were wrong then), so it was cancelled.
+#
+# Releases do NOT go through this file. CI deploys each release by image digest
+# through the deploy hooks, after staging smoke tests and production approval.
+# Keep the Blueprint's Auto Sync set to "No" in Render: a sync redeploys the
+# services, and the image below (:latest) is pushed before approval, so an
+# automatic sync could put an unapproved build on production.
+services:
+  # Production: https://cicd-starter-latest.onrender.com
+  - type: web
+    name: cicd-starter:latest
+    runtime: image
+    image:
+      url: ghcr.io/ebinjiji/cicd-starter:latest
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+
+  # Staging: https://cicd-starter-latest-1.onrender.com
+  - type: web
+    name: cicd-starter:latest-1
+    runtime: image
+    image:
+      url: ghcr.io/ebinjiji/cicd-starter:latest
+    plan: free
+    region: oregon
+    healthCheckPath: /health
