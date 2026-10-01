@@ -1,25 +1,43 @@
-# CI/CD Practice
+# QA Portal
 
 [![CI](https://github.com/EbinJiji/cicd-practice/actions/workflows/ci.yml/badge.svg)](https://github.com/EbinJiji/cicd-practice/actions/workflows/ci.yml)
 
-A tiny calculator web service for learning CI/CD with GitHub Actions.
+A web portal for running automated QA tests against HTTP APIs and keeping a history of
+the results, built and shipped through a full CI/CD pipeline.
 
-Run tests and lint locally:
+**Version 1 (this release):** login, logout, and the Dashboard and History pages. Writing
+and running tests comes in the next versions.
+
+## Settings
+
+The portal won't start without these (set them in Render → service → **Environment**):
+
+| Setting | What it is |
+|---|---|
+| `DATABASE_URL` | Postgres connection string (e.g. from Neon). Keep it secret |
+| `ADMIN_USERNAME` | Username of the admin account, created on startup |
+| `ADMIN_PASSWORD` | Its password, at least 12 characters. Changing it and restarting resets the password |
+
+Passwords are stored as scrypt hashes and sessions as SHA-256 hashes of a random token, so
+neither can be read back from the database. Logins are limited to 10 attempts per 15 minutes
+per address.
+
+## Developing
 
     npm install
-    npm test
+    npm test        # uses PGlite (Postgres inside Node) unless DATABASE_URL is set
     npm run lint
 
-Run the server locally:
+To run the server you need a Postgres database:
 
-    node src/server.js
-    # then open http://localhost:3000/add?a=2&b=3
+    DATABASE_URL=postgres://... ADMIN_USERNAME=admin ADMIN_PASSWORD=... node src/server.js
+    # then open http://localhost:3000
 
 ## Pipeline
 
 The pipeline lives in `.github/workflows/ci.yml`:
 
-- **CI:** runs the tests on Node 20, 22 and 24, and ESLint once, for every pull request and
+- **CI:** runs the tests on Node 22 and 24 against a real Postgres server, and ESLint once, for every pull request and
   every push to `main`.
 - **CD:** after the tests and lint pass on `main`, builds a Docker image and publishes it to
   `ghcr.io/ebinjiji/cicd-practice` (tags: `latest` and the commit SHA). On pull requests
@@ -81,14 +99,5 @@ catches it), or the next deploy will ship it again.
 
 Run the published image:
 
-    docker run -p 3000:3000 ghcr.io/ebinjiji/cicd-practice:latest
-
-## Exercises
-
-1. Push to GitHub and watch the **Actions** tab.
-2. Break a test on purpose (e.g. make `add` return `a - b`), push, and watch CI fail. Then fix it.
-3. Add a new function (e.g. `power`) with a test.
-4. Protect `main`: Settings → Branches → require the CI check to pass before merging.
-5. Add a lint step (ESLint) to the workflow.
-6. Add a CI status badge to this README.
-7. Deploy the published image to a hosting service (e.g. Render or Fly.io).
+    docker run -p 3000:3000 -e DATABASE_URL=postgres://... -e ADMIN_USERNAME=admin \
+      -e ADMIN_PASSWORD=... ghcr.io/ebinjiji/cicd-practice:latest

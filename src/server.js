@@ -1,49 +1,32 @@
 const http = require("node:http");
-const calculator = require("./calculator");
+const { createApp } = require("./app");
+const { createDb, migrate } = require("./db");
+const { ensureAdmin } = require("./auth");
 
-// GET /add?a=2&b=3  ->  {"result":5}
-function handle(req, res) {
-  const url = new URL(req.url, "http://localhost");
-  const op = url.pathname.slice(1);
+const REQUIRED = ["DATABASE_URL", "ADMIN_USERNAME", "ADMIN_PASSWORD"];
 
-  if (op === "") {
-    return send(res, 200, {
-      message: "Calculator API",
-      usage: "/<operation>?a=<number>&b=<number>",
-      operations: Object.keys(calculator),
-      example: "/add?a=2&b=3",
-    });
+async function main() {
+  // Fail fast with a clear message rather than start a portal nobody can use.
+  const missing = REQUIRED.filter((name) => !process.env[name]);
+  if (missing.length) {
+    console.error(`Missing required settings: ${missing.join(", ")}`);
+    process.exit(1);
   }
-  if (op === "health") {
-    return send(res, 200, { status: "ok", version: process.env.GIT_SHA || "dev" });
-  }
-  if (!Object.hasOwn(calculator, op)) {
-    return send(res, 404, { error: `Unknown operation: ${op}` });
+  if (process.env.ADMIN_PASSWORD.length < 12) {
+    console.error("ADMIN_PASSWORD must be at least 12 characters");
+    process.exit(1);
   }
 
-  const a = Number(url.searchParams.get("a"));
-  const b = Number(url.searchParams.get("b"));
-  if (Number.isNaN(a) || Number.isNaN(b)) {
-    return send(res, 400, { error: "a and b must be numbers" });
-  }
+  const db = createDb(process.env.DATABASE_URL);
+  await migrate(db);
+  await ensureAdmin(db, process.env.ADMIN_USERNAME, process.env.ADMIN_PASSWORD);
 
-  try {
-    send(res, 200, { result: calculator[op](a, b) });
-  } catch (err) {
-    send(res, 400, { error: err.message });
-  }
-}
-
-function send(res, status, body) {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(body));
-}
-
-const server = http.createServer(handle);
-
-if (require.main === module) {
+  const server = http.createServer(createApp({ db, version: process.env.GIT_SHA || "dev" }));
   const port = process.env.PORT || 3000;
-  server.listen(port, () => console.log(`Listening on port ${port}`));
+  server.listen(port, () => console.log(`QA Portal listening on port ${port}`));
 }
 
-module.exports = server;
+main().catch((err) => {
+  console.error("Startup failed:", err.message);
+  process.exit(1);
+});

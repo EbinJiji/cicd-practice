@@ -1,16 +1,20 @@
 {
   "name": "cicd-practice",
   "version": "1.0.0",
-  "description": "A tiny project for learning CI/CD with GitHub Actions",
-  "main": "src/calculator.js",
+  "description": "QA Portal: run automated HTTP/API tests and keep a history of results",
+  "main": "src/server.js",
   "scripts": {
     "test": "node --test",
     "lint": "eslint ."
   },
   "license": "MIT",
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
     "globals": "^17.12.0"
+  },
+  "dependencies": {
+    "pg": "8.23.0"
   }
 }

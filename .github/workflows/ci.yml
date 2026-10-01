@@ -14,11 +14,26 @@ permissions:
 
 jobs:
   test:
-    # Run the same job on several Node versions (a "matrix build").
+    # Run the same job on each supported Node version (a "matrix build").
     strategy:
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [22, 24]
     runs-on: ubuntu-24.04
+
+    # A real, throwaway Postgres server for this job only. The password is a
+    # test value: the database exists for a few minutes and only inside CI.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Check out the code
@@ -28,8 +43,14 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Run tests
+        env:
+          DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
         run: npm test
 
   lint:
