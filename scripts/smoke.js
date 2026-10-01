@@ -1,5 +1,6 @@
-// Smoke tests: a few real requests against a deployed service.
+// Smoke tests: a few real requests against a deployed portal.
 // Unit tests prove the code works; these prove the deployed site does.
+// They never log in, so they need no password.
 //
 //   node scripts/smoke.js https://<your-service>.onrender.com
 
@@ -10,28 +11,21 @@ if (!baseUrl) {
 }
 
 const checks = [
-  ["GET /add returns the sum", "/add?a=2&b=3", 200, { result: 5 }],
-  ["GET /subtract returns the difference", "/subtract?a=5&b=3", 200, { result: 2 }],
-  ["non-numeric input is rejected", "/add?a=abc&b=1", 400],
-  ["divide by zero is rejected", "/divide?a=1&b=0", 400],
-  ["unknown operation is 404", "/modulo?a=1&b=2", 404],
-  [
-    "GET / lists the operations",
-    "/",
-    200,
-    (body) => JSON.stringify(body.operations) === '["add","subtract","multiply","divide"]',
-  ],
+  ["health check is ok (database reachable)", "GET", "/health", 200, (r, body) => JSON.parse(body).status === "ok"],
+  ["start page sends visitors to log in", "GET", "/", 303, (r) => r.headers.get("location") === "/login"],
+  ["login page shows the form", "GET", "/login", 200, (r, body) => body.includes('name="password"')],
+  ["dashboard requires login", "GET", "/dashboard", 303, (r) => r.headers.get("location") === "/login"],
+  ["stylesheet is served", "GET", "/style.css", 200, (r) => /text\/css/.test(r.headers.get("content-type"))],
+  ["security headers are set", "GET", "/login", 200, (r) => /default-src 'self'/.test(r.headers.get("content-security-policy"))],
+  ["unknown page is 404", "GET", "/no-such-page", 404],
 ];
 
-async function run([, path, wantStatus, want]) {
-  const res = await fetch(baseUrl + path, { signal: AbortSignal.timeout(30_000) });
-  const body = await res.json();
+async function run([, method, path, wantStatus, check]) {
+  const res = await fetch(baseUrl + path, { method, redirect: "manual", signal: AbortSignal.timeout(30_000) });
+  const body = await res.text();
   const problems = [];
   if (res.status !== wantStatus) problems.push(`status ${res.status}, expected ${wantStatus}`);
-  if (typeof want === "function" && !want(body)) problems.push(`unexpected body ${JSON.stringify(body)}`);
-  if (want && typeof want === "object" && JSON.stringify(body) !== JSON.stringify(want)) {
-    problems.push(`body ${JSON.stringify(body)}, expected ${JSON.stringify(want)}`);
-  }
+  else if (check && !check(res, body)) problems.push(`unexpected response: ${body.slice(0, 120)}`);
   return problems;
 }
 
@@ -53,5 +47,7 @@ async function run([, path, wantStatus, want]) {
     }
   }
   console.log(failed ? `${failed} of ${checks.length} checks failed` : `All ${checks.length} checks passed`);
-  process.exit(failed ? 1 : 0);
+  // Set the exit code and let Node finish on its own: calling process.exit()
+  // right after fetch can crash Node on Windows.
+  process.exitCode = failed ? 1 : 0;
 })();
