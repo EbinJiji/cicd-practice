@@ -1,7 +1,7 @@
 // Smoke tests: a few real requests against a deployed service.
 // Unit tests prove the code works; these prove the deployed site does.
 //
-//   node scripts/smoke.js https://cicd-starter-latest-1.onrender.com
+//   node scripts/smoke.js https://<your-service>.onrender.com
 
 const baseUrl = (process.argv[2] || "").replace(/\/$/, "");
 if (!baseUrl) {

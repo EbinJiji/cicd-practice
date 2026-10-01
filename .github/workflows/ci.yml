@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build the image locally
-        run: docker build -t cicd-starter:scan .
+        run: docker build -t app:scan .
 
       # Pinned to a commit SHA: this action's tags were briefly hijacked in
       # March 2026, and a tag can be moved to different code but a SHA cannot.
@@ -70,7 +70,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
-          image-ref: cicd-starter:scan
+          image-ref: app:scan
           # Fail only on serious issues that already have a fix available.
           severity: HIGH,CRITICAL
           ignore-unfixed: true
