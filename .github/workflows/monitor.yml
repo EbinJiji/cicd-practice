@@ -14,12 +14,15 @@ on:
         required: false
 
 # Not the production environment: that would wait for approval on every run.
+# The URL comes from the PRODUCTION_URL repository variable, so a copy of this
+# repo never checks someone else's site; until it is set, the job is skipped.
 env:
-  URL: ${{ inputs.url || 'https://cicd-starter-latest.onrender.com' }}
+  URL: ${{ inputs.url || vars.PRODUCTION_URL }}
   LABEL: production-down
 
 jobs:
   check:
+    if: inputs.url || vars.PRODUCTION_URL
     runs-on: ubuntu-24.04
     permissions:
       contents: read

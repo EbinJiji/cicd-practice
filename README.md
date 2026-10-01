@@ -1,6 +1,6 @@
-# CI/CD Starter
+# CI/CD Practice
 
-[![CI](https://github.com/EbinJiji/cicd-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/EbinJiji/cicd-starter/actions/workflows/ci.yml)
+[![CI](https://github.com/EbinJiji/cicd-practice/actions/workflows/ci.yml/badge.svg)](https://github.com/EbinJiji/cicd-practice/actions/workflows/ci.yml)
 
 A tiny calculator web service for learning CI/CD with GitHub Actions.
 
@@ -22,7 +22,7 @@ The pipeline lives in `.github/workflows/ci.yml`:
 - **CI:** runs the tests on Node 20, 22 and 24, and ESLint once, for every pull request and
   every push to `main`.
 - **CD:** after the tests and lint pass on `main`, builds a Docker image and publishes it to
-  `ghcr.io/ebinjiji/cicd-starter` (tags: `latest` and the commit SHA). On pull requests
+  `ghcr.io/ebinjiji/cicd-practice` (tags: `latest` and the commit SHA). On pull requests
   the image is only built, to check the Dockerfile still works.
 - **Deploy:** on `main`, the exact image just built (by digest) goes to **staging** first, then
   waits for a manual approval before the same image goes to **production**. Approve it from the
@@ -32,8 +32,8 @@ The pipeline lives in `.github/workflows/ci.yml`:
   commit SHA, then runs smoke tests (`scripts/smoke.js`) against it: a few real requests that
   check the live site gives the right answers. If they fail on staging, production is never
   offered for approval. Run them yourself with `node scripts/smoke.js <url>`.
-  - Staging: https://cicd-starter-latest-1.onrender.com
-  - Production: https://cicd-starter-latest.onrender.com
+  - Staging: _not created yet_
+  - Production: _not created yet_
 - **Security:** every PR and push to `main` is checked two ways. Trivy (`scan` job in CI) builds
   the image and fails on HIGH or CRITICAL vulnerabilities that have a fix available, so a
   vulnerable image is never published. CodeQL (`codeql.yml`) looks for vulnerable code patterns
@@ -44,7 +44,8 @@ The pipeline lives in `.github/workflows/ci.yml`:
 - **Monitoring:** `.github/workflows/monitor.yml` runs the smoke tests against production every
   6 hours. While they fail, it keeps one issue labelled `production-down` open (GitHub emails
   you when it opens) and closes it automatically once they pass again. Run it any time from
-  **Actions → Monitor**. GitHub pauses scheduled workflows after 60 days without repo activity.
+  **Actions → Monitor**. It checks the URL in the `PRODUCTION_URL` repository variable and is
+  skipped while that is unset. GitHub pauses scheduled workflows after 60 days without repo activity.
 - **Updates:** Dependabot (`.github/dependabot.yml`) opens a weekly PR for newer npm packages
   and another for newer GitHub Actions. They go through the same CI as any other PR.
 - **Runners** are pinned to `ubuntu-24.04` rather than `ubuntu-latest`, so a new Ubuntu
@@ -80,7 +81,7 @@ catches it), or the next deploy will ship it again.
 
 Run the published image:
 
-    docker run -p 3000:3000 ghcr.io/ebinjiji/cicd-starter:latest
+    docker run -p 3000:3000 ghcr.io/ebinjiji/cicd-practice:latest
 
 ## Exercises
 

@@ -3,11 +3,7 @@
 #
 # The names must match the existing services exactly (including the colon) so
 # Render updates them instead of creating new ones. Region can't be changed
-# after creation. In the dashboard, production sits in the "My project" project
-# and staging is ungrouped.
-#
-# Not linked to Render yet: a first attempt at creating the Blueprint offered to
-# create new services (the names here were wrong then), so it was cancelled.
+# after creation.
 #
 # Releases do NOT go through this file. CI deploys each release by image digest
 # through the deploy hooks, after staging smoke tests and production approval.
@@ -15,22 +11,22 @@
 # services, and the image below (:latest) is pushed before approval, so an
 # automatic sync could put an unapproved build on production.
 services:
-  # Production: https://cicd-starter-latest.onrender.com
+  # Production
   - type: web
-    name: cicd-starter:latest
+    name: cicd-practice
     runtime: image
     image:
-      url: ghcr.io/ebinjiji/cicd-starter:latest
+      url: ghcr.io/ebinjiji/cicd-practice:latest
     plan: free
     region: oregon
     healthCheckPath: /health
 
-  # Staging: https://cicd-starter-latest-1.onrender.com
+  # Staging
   - type: web
-    name: cicd-starter:latest-1
+    name: cicd-practice-staging
     runtime: image
     image:
-      url: ghcr.io/ebinjiji/cicd-starter:latest
+      url: ghcr.io/ebinjiji/cicd-practice:latest
     plan: free
     region: oregon
     healthCheckPath: /health
